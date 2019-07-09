@@ -8,6 +8,17 @@ services:
         restart: always
         ports:
             - 5432:5432
-    aggregator:
-        build: aggregator
+
+    logger-server:
+        build: logger
+        command:
+            - python3 -u server.py
+        restart: always
+
+    logger-dispatcher:
+        build: logger
+        command:
+            - python3 -u dispatcher.py
+        volumes:
+            - /var/lib/docker/containers:/var/lib/docker/containers
         restart: always

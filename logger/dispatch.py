@@ -91,6 +91,8 @@ def set_line_no_state(cursor, container, line_no):
     cursor.execute("INSERT OR REPLACE INTO containers VALUES (?, ?)", (container, line_no))
 
 
+LOGGER_SERVER_HOST = "http://logger-server:5000"
+
 LOG_DIR = Path("/var/lib/docker/containers/")
 
 # Local DB for storing which logs have been submitted
@@ -133,7 +135,7 @@ while True:
 
                 # Send log lines to remote DB
                 print("Sending:", len(json.dumps(logs)), "bytes")
-                resp = requests.post("http://localhost:5000/bulk", json=logs)
+                resp = requests.post("{}/bulk".format(LOGGER_SERVER_HOST), json=logs)
                 resp.raise_for_status()
 
             # Reset timer

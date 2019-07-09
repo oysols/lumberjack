@@ -1,0 +1,13 @@
+version: "3"
+services:
+    timescale:
+        build: timescale
+        environment:
+          POSTGRES_USER: "postgres"
+          POSTGRES_PASSWORD: "pass"
+        restart: always
+        ports:
+            - 5432:5432
+    aggregator:
+        build: aggregator
+        restart: always

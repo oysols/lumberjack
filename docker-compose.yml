@@ -12,13 +12,18 @@ services:
     logger-server:
         build: logger
         command:
-            - python3 -u server.py
+            - python3
+            - -u
+            - server.py
         restart: always
 
-    logger-dispatcher:
+    logger-dispatch:
         build: logger
         command:
-            - python3 -u dispatcher.py
+            - python3
+            - -u
+            - dispatch.py
         volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
             - /var/lib/docker/containers:/var/lib/docker/containers
         restart: always

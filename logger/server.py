@@ -9,7 +9,10 @@ import flask
 app = flask.Flask(__name__)
 
 
-def insert_bulk(logs):
+POSTGRES_HOST = "timescale"
+
+
+def insert_bulk(conn, logs):
     with conn:
         with conn.cursor() as c:
             c.executemany("""
@@ -22,10 +25,10 @@ def insert_bulk(logs):
 
 @app.route('/bulk', methods=['POST'])
 def bulk():
-    conn = psycopg2.connect(host="localhost", database="postgres", user="postgres", password="pass")
+    conn = psycopg2.connect(host=POSTGRES_HOST, database="postgres", user="postgres", password="pass")
     logs = flask.request.json
     try:
-        insert_bulk(logs)
+        insert_bulk(conn, logs)
     except:
         print(logs)
         raise

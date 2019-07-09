@@ -22,6 +22,8 @@ def tail_container_to_queue(container_id, log_path, log_queue, start_line=0):
     p = subprocess.Popen(["tail", "-f", str(log_path), "-n", "+{}".format(start_line)], stdout=subprocess.PIPE)
     try:
         inspect = docker_inspect(container_id)
+        if "logger-" in inspect["Name"]:
+            return
         docker_info = {
                 "container_id": inspect["Id"],
                 "container_name": inspect["Name"],

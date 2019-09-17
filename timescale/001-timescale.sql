@@ -2,8 +2,7 @@ BEGIN;
 CREATE TABLE logs (
     time                   TIMESTAMPTZ       NOT NULL,
     meta                   TEXT              NULL,
-    data                   JSONB             NULL,
-    PRIMARY KEY(time)
+    data                   JSONB             NULL
 );
 SELECT create_hypertable('logs', 'time');
 COMMIT;

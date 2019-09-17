@@ -6,6 +6,7 @@ from pathlib import Path
 import socket
 import sqlite3
 import time
+import gzip
 
 import requests
 
@@ -102,8 +103,8 @@ LOCAL_STATE_DB_PATH = LOG_DIR / "state.db"
 conn = sqlite3.connect(str(LOCAL_STATE_DB_PATH))
 conn.execute("CREATE TABLE IF NOT EXISTS containers (id VARCHAR UNIQUE, line_no VARCHAR)")
 
-log_queue = queue.Queue(maxsize=1000)
-max_logs_per_post = 100
+log_queue = queue.Queue(maxsize=2000)
+max_logs_per_post = 1000
 post_interval = 5
 scan_interval = 10
 sleep_duration = 0.5
@@ -117,7 +118,8 @@ while True:
         scan_and_tail_logs_in_threads(conn, log_tail_threads, log_queue)
         last_scan_time = time.time()
 
-    if time.time() - last_send_time > post_interval:
+    if logs or time.time() - last_send_time > post_interval:
+        start = time.time()
         with conn as cursor:
             updated_line_nos = {}
             logs = []
@@ -134,11 +136,15 @@ while True:
                 # Keep track of submitted log lines
                 for container_id, line_no in updated_line_nos.items():
                     set_line_no_state(cursor, container_id, line_no)
-
+                print("Parsed in", time.time() - start)
+                start = time.time()
                 # Send log lines to remote DB
-                print("Sending:", len(json.dumps(logs)), "bytes")
-                resp = requests.post("{}/bulk".format(LOGGER_SERVER_HOST), json=logs)
+                headers = {'Content-Encoding': 'gzip'}
+                data = gzip.compress(json.dumps(logs).encode())
+                print("Sending:", len(json.dumps(logs)), "bytes Compressed", len(data))
+                resp = requests.post("{}/bulk".format(LOGGER_SERVER_HOST), data=data, headers=headers)
                 resp.raise_for_status()
+                print("Sent in", time.time() - start)
 
             # Reset timer
             last_send_time = time.time()

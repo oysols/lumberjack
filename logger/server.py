@@ -3,6 +3,7 @@ import json
 import time
 
 import psycopg2
+import psycopg2.extras
 import flask
 
 
@@ -15,18 +16,30 @@ POSTGRES_HOST = "timescale"
 def insert_bulk(conn, logs):
     with conn:
         with conn.cursor() as c:
-            c.executemany("""
+            start = time.time()
+            values = ((log["timestamp"], log["docker"]["container_id"], json.dumps(log)) for log in logs)
+            print("parse values", time.time() - start)
+            start = time.time()
+            psycopg2.extras.execute_batch(
+                c,
+                """
                 INSERT INTO logs (time, meta, data)
                 VALUES (%s, %s, %s)
                 """,
-                [(log["timestamp"], log["docker"]["container_id"], json.dumps(log)) for log in logs],
+                values,
+                page_size=1000
             )
+            print("perform query", time.time() - start)
 
-
+import gzip
+import json
 @app.route('/bulk', methods=['POST'])
 def bulk():
+    start = time.time()
     conn = psycopg2.connect(host=POSTGRES_HOST, database="postgres", user="postgres", password="pass")
-    logs = flask.request.json
+    data = gzip.decompress(flask.request.data)
+    logs = json.loads(data)
+    print("prepare", time.time() - start)
     try:
         insert_bulk(conn, logs)
     except:

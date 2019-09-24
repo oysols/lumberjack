@@ -23,8 +23,11 @@ def tail_container_to_queue(container_id, log_path, log_queue, start_line=0):
     p = subprocess.Popen(["tail", "-f", str(log_path), "-n", "+{}".format(start_line)], stdout=subprocess.PIPE)
     try:
         inspect = docker_inspect(container_id)
-        if "logger-" in inspect["Name"]:
-            return
+
+        # TODO: Remove
+        #if "logger-" in inspect["Name"]:
+        #    return
+
         docker_info = {
                 "container_id": inspect["Id"],
                 "container_name": inspect["Name"],
@@ -113,13 +116,14 @@ if __name__ == "__main__":
     log_tail_threads = {}
     last_scan_time = time.time()
     last_send_time = time.time()
-    logs = []
+    should_sleep = False
+
     while True:
         if time.time() - last_scan_time > scan_interval:
             scan_and_tail_logs_in_threads(conn, log_tail_threads, log_queue)
             last_scan_time = time.time()
 
-        if logs or time.time() - last_send_time > post_interval:
+        if not should_sleep or time.time() - last_send_time > post_interval:
             start = time.time()
             with conn as cursor:
                 updated_line_nos = {}
@@ -137,8 +141,9 @@ if __name__ == "__main__":
                     # Keep track of submitted log lines
                     for container_id, line_no in updated_line_nos.items():
                         set_line_no_state(cursor, container_id, line_no)
-                    print("Parsed in", time.time() - start)
+                    print(f"Parsed {len(logs)} logs in {time.time() - start}")
                     start = time.time()
+
                     # Send log lines to remote DB
                     headers = {'Content-Encoding': 'gzip'}
                     data = gzip.compress(json.dumps(logs).encode())
@@ -147,9 +152,14 @@ if __name__ == "__main__":
                     resp.raise_for_status()
                     print("Sent in", time.time() - start)
 
-                # Reset timer
-                last_send_time = time.time()
+                    # Reset timer
+                    last_send_time = time.time()
+
+                if len(logs) == max_logs_per_post:
+                    should_sleep = False
+                else:
+                    should_sleep = True
 
         # Sleep if nothing was done
-        if not logs:
+        if should_sleep:
             time.sleep(sleep_duration)

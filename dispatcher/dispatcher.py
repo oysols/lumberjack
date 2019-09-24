@@ -103,7 +103,7 @@ if __name__ == "__main__":
     LOG_DIR = Path("/var/lib/docker/containers/")
 
     # Local DB for storing which logs have been submitted
-    LOCAL_STATE_DB_PATH = LOG_DIR / "state.db"
+    LOCAL_STATE_DB_PATH = LOG_DIR / "lumberjack-state.db"
     conn = sqlite3.connect(str(LOCAL_STATE_DB_PATH))
     conn.execute("CREATE TABLE IF NOT EXISTS containers (id VARCHAR UNIQUE, line_no VARCHAR)")
 

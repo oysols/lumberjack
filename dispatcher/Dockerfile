@@ -16,10 +16,10 @@ RUN add-apt-repository \
 RUN apt-get update && apt-get install -y \
         docker-ce
 
-WORKDIR /server
+WORKDIR /dispatcher
 
 COPY requirements.txt .
 RUN pip3 install -r requirements.txt
 
 COPY * ./
-CMD python3 -u server.py
+CMD python3 -u dispatcher.py

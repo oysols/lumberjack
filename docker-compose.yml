@@ -10,19 +10,11 @@ services:
             - 5432:5432
 
     logger-server:
-        build: logger
-        command:
-            - python3
-            - -u
-            - server.py
+        build: server
         restart: always
 
     logger-dispatcher:
-        build: logger
-        command:
-            - python3
-            - -u
-            - dispatcher.py
+        build: dispatcher
         volumes:
             - /var/run/docker.sock:/var/run/docker.sock
             - /var/lib/docker/containers:/var/lib/docker/containers

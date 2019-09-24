@@ -112,6 +112,7 @@ if __name__ == "__main__":
     post_interval = 5
     scan_interval = 10
     sleep_duration = 0.5
+    backoff_duration = 5
 
     log_tail_threads = {}
     last_scan_time = time.time()
@@ -149,7 +150,11 @@ if __name__ == "__main__":
                     data = gzip.compress(json.dumps(logs).encode())
                     print("Sending:", len(json.dumps(logs)), "bytes Compressed", len(data))
                     resp = requests.post("{}/bulk".format(LOGGER_SERVER_HOST), data=data, headers=headers)
-                    resp.raise_for_status()
+                    try:
+                        resp.raise_for_status()
+                    except Exception as e:
+                        time.sleep(backoff_duration)
+                        raise
                     print("Sent in", time.time() - start)
 
                     # Reset timer

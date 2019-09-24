@@ -1,6 +1,7 @@
 from datetime import datetime
 import json
 import time
+import gzip
 
 import psycopg2
 import psycopg2.extras
@@ -31,8 +32,7 @@ def insert_bulk(conn, logs):
             )
             print("perform query", time.time() - start)
 
-import gzip
-import json
+
 @app.route('/bulk', methods=['POST'])
 def bulk():
     start = time.time()

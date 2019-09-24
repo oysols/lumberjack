@@ -14,7 +14,7 @@ import requests
 def docker_inspect(container):
     out = subprocess.check_output(["docker", "inspect", container]).decode()
     data = json.loads(out)
-    assert len(data) == 1  # Why is it a list?
+    assert len(data) == 1
     return data[0]
 
 
@@ -94,61 +94,62 @@ def set_line_no_state(cursor, container, line_no):
     cursor.execute("INSERT OR REPLACE INTO containers VALUES (?, ?)", (container, line_no))
 
 
-LOGGER_SERVER_HOST = "http://logger-server:5000"
+if __name__ == "__main__":
+    LOGGER_SERVER_HOST = "http://logger-server:5000"
 
-LOG_DIR = Path("/var/lib/docker/containers/")
+    LOG_DIR = Path("/var/lib/docker/containers/")
 
-# Local DB for storing which logs have been submitted
-LOCAL_STATE_DB_PATH = LOG_DIR / "state.db"
-conn = sqlite3.connect(str(LOCAL_STATE_DB_PATH))
-conn.execute("CREATE TABLE IF NOT EXISTS containers (id VARCHAR UNIQUE, line_no VARCHAR)")
+    # Local DB for storing which logs have been submitted
+    LOCAL_STATE_DB_PATH = LOG_DIR / "state.db"
+    conn = sqlite3.connect(str(LOCAL_STATE_DB_PATH))
+    conn.execute("CREATE TABLE IF NOT EXISTS containers (id VARCHAR UNIQUE, line_no VARCHAR)")
 
-log_queue = queue.Queue(maxsize=2000)
-max_logs_per_post = 1000
-post_interval = 5
-scan_interval = 10
-sleep_duration = 0.5
+    log_queue = queue.Queue(maxsize=2000)
+    max_logs_per_post = 1000
+    post_interval = 5
+    scan_interval = 10
+    sleep_duration = 0.5
 
-log_tail_threads = {}
-last_scan_time = time.time()
-last_send_time = time.time()
-logs = []
-while True:
-    if time.time() - last_scan_time > scan_interval:
-        scan_and_tail_logs_in_threads(conn, log_tail_threads, log_queue)
-        last_scan_time = time.time()
+    log_tail_threads = {}
+    last_scan_time = time.time()
+    last_send_time = time.time()
+    logs = []
+    while True:
+        if time.time() - last_scan_time > scan_interval:
+            scan_and_tail_logs_in_threads(conn, log_tail_threads, log_queue)
+            last_scan_time = time.time()
 
-    if logs or time.time() - last_send_time > post_interval:
-        start = time.time()
-        with conn as cursor:
-            updated_line_nos = {}
-            logs = []
-            while len(logs) < max_logs_per_post:
-                # Fetch new logs from queue
-                try:
-                    log_dict = log_queue.get_nowait()
-                except queue.Empty:
-                    break
-                updated_line_nos[log_dict["docker"]["container_id"]] = log_dict["line_no"]
-                logs.append(log_dict)
+        if logs or time.time() - last_send_time > post_interval:
+            start = time.time()
+            with conn as cursor:
+                updated_line_nos = {}
+                logs = []
+                while len(logs) < max_logs_per_post:
+                    # Fetch new logs from queue
+                    try:
+                        log_dict = log_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                    updated_line_nos[log_dict["docker"]["container_id"]] = log_dict["line_no"]
+                    logs.append(log_dict)
 
-            if logs:
-                # Keep track of submitted log lines
-                for container_id, line_no in updated_line_nos.items():
-                    set_line_no_state(cursor, container_id, line_no)
-                print("Parsed in", time.time() - start)
-                start = time.time()
-                # Send log lines to remote DB
-                headers = {'Content-Encoding': 'gzip'}
-                data = gzip.compress(json.dumps(logs).encode())
-                print("Sending:", len(json.dumps(logs)), "bytes Compressed", len(data))
-                resp = requests.post("{}/bulk".format(LOGGER_SERVER_HOST), data=data, headers=headers)
-                resp.raise_for_status()
-                print("Sent in", time.time() - start)
+                if logs:
+                    # Keep track of submitted log lines
+                    for container_id, line_no in updated_line_nos.items():
+                        set_line_no_state(cursor, container_id, line_no)
+                    print("Parsed in", time.time() - start)
+                    start = time.time()
+                    # Send log lines to remote DB
+                    headers = {'Content-Encoding': 'gzip'}
+                    data = gzip.compress(json.dumps(logs).encode())
+                    print("Sending:", len(json.dumps(logs)), "bytes Compressed", len(data))
+                    resp = requests.post("{}/bulk".format(LOGGER_SERVER_HOST), data=data, headers=headers)
+                    resp.raise_for_status()
+                    print("Sent in", time.time() - start)
 
-            # Reset timer
-            last_send_time = time.time()
+                # Reset timer
+                last_send_time = time.time()
 
-    # Sleep if nothing was done
-    if not logs:
-        time.sleep(sleep_duration)
+        # Sleep if nothing was done
+        if not logs:
+            time.sleep(sleep_duration)

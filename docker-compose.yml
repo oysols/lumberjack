@@ -2,6 +2,7 @@ version: "3"
 services:
     timescale:
         build: timescale
+        image: lumberjack-timescale
         environment:
           POSTGRES_USER: "postgres"
           POSTGRES_PASSWORD: "pass"
@@ -9,12 +10,12 @@ services:
         ports:
             - 5432:5432
 
-    logger-server:
+    lumberjack-server:
         build: server
         image: lumberjack-server
         restart: always
 
-    logger-dispatcher:
+    lumberjack-dispatcher:
         build: dispatcher
         image: lumberjack-dispatcher
         volumes:

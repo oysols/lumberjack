@@ -8,12 +8,13 @@ import socket
 import sqlite3
 import time
 import gzip
+import argparse
 import os
 
 import requests
 
 
-def get_pod_info_from_kubernetes(container_id: str) -> Dict:
+def get_pod_info_from_kubernetes() -> Dict:
     # Retrieve service account details
     service_account_path = Path("/var/run/secrets/kubernetes.io/serviceaccount")
     if not service_account_path.is_dir():
@@ -70,8 +71,12 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: queue.
     assert start_line > 0
     p = subprocess.Popen(["tail", "-f", str(log_path), "-n", "+{}".format(start_line)], stdout=subprocess.PIPE)
     try:
-        container_info = get_docker_inspect(container_id)
-        container_metadata = get_metadata_from_docker_inspect(container_info)
+        if USE_KUBERNETES_SERVICEACCOUNT:
+            pod_info = get_pod_info_from_kubernetes()
+            container_metadata = get_metadata_from_pod_info(pod_info, container_id)
+        else:
+            container_info = get_docker_inspect(container_id)
+            container_metadata = get_metadata_from_docker_inspect(container_info)
 
         # TODO: Remove
         # if "logger-" in docker_info["container_name"]:
@@ -113,6 +118,7 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: queue.
             line_no += 1
     finally:
         p.kill()
+        p.join()
 
 
 def get_next_line_no(conn: sqlite3.Connection, container_id: str) -> int:
@@ -142,7 +148,13 @@ def set_line_no_state(cursor: sqlite3.Cursor, container_id: str, line_no: int) -
 
 
 if __name__ == "__main__":
-    LOGGER_SERVER_HOST = "http://logger-server:5000"
+    parser = argparse.ArgumentParser(description='Collect docker logs and send them to logging server')
+    parser.add_argument('--kubernetes', help='Use kubernetes service account to collect metadata', action="store_true")
+    args = parser.parse_args()
+
+    USE_KUBERNETES_SERVICEACCOUNT = args.kubernetes
+
+    LOGGER_SERVER_HOST = "http://lumberjack-server:5000"
 
     LOG_DIR = Path("/var/lib/docker/containers/")
 

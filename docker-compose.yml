@@ -11,10 +11,12 @@ services:
 
     logger-server:
         build: server
+        image: lumberjack-server
         restart: always
 
     logger-dispatcher:
         build: dispatcher
+        image: lumberjack-dispatcher
         volumes:
             - /var/run/docker.sock:/var/run/docker.sock
             - /var/lib/docker/containers:/var/lib/docker/containers

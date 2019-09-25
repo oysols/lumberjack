@@ -1,8 +1,10 @@
 BEGIN;
 CREATE TABLE logs (
-    time                   TIMESTAMPTZ       NOT NULL,
-    meta                   TEXT              NULL,
-    data                   JSONB             NULL
+    timestamp TIMESTAMPTZ NOT NULL,
+    raw_log TEXT NULL,
+    stream TEXT NOT NULL,
+    log JSONB NOT NULL,
+    metadata JSONB NOT NULL
 );
-SELECT create_hypertable('logs', 'time');
+SELECT create_hypertable('logs', 'timestamp');
 COMMIT;

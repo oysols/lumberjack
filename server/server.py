@@ -18,14 +18,14 @@ def insert_bulk(conn, logs):
     with conn:
         with conn.cursor() as c:
             start = time.time()
-            values = ((log["timestamp"], log["docker"]["container_id"], json.dumps(log)) for log in logs)
+            values = ((log["timestamp"], log["raw_log"], log["stream"], json.dumps(log["log"]), json.dumps(log["metadata"])) for log in logs)
             print("parse values", time.time() - start)
             start = time.time()
             psycopg2.extras.execute_batch(
                 c,
                 """
-                INSERT INTO logs (time, meta, data)
-                VALUES (%s, %s, %s)
+                INSERT INTO logs (timestamp, raw_log, stream, log, metadata)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
                 values,
                 page_size=1000

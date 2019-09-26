@@ -1,6 +1,6 @@
 # Lumberjack
 
-Log aggregation and storeage of docker container logs from kubernetes or single docker host.
+Log aggregation and storage of docker container logs from kubernetes or single docker host.
 
 ## Dispatcher
 

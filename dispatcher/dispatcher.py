@@ -78,10 +78,6 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: queue.
             container_info = get_docker_inspect(container_id)
             container_metadata = get_metadata_from_docker_inspect(container_info)
 
-        # TODO: Remove
-        # if "logger-" in docker_info["container_name"]:
-        #     return
-
         line_no = start_line
         while True:
             line = p.stdout.readline()
@@ -118,7 +114,7 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: queue.
             line_no += 1
     finally:
         p.kill()
-        p.join()
+        p.wait()
 
 
 def get_next_line_no(conn: sqlite3.Connection, container_id: str) -> int:

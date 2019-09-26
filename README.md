@@ -28,3 +28,18 @@ Log aggregation and storeage of docker container logs from kubernetes or single 
     ORDER BY timestamp
     DESC LIMIT 10;`
 ```
+
+# Reference commands
+
+- Delete old chunks
+
+```
+    SELECT drop_chunks(older_than => interval '1 month');
+```
+
+- Indexed queries
+
+```
+    CREATE INDEX ON logs ((metadata ->> 'container_id'), timestamp DESC);
+    SELECT timestamp FROM logs WHERE metadata ->> 'container_id' = 'some_container' ORDER BY timestamp DESC LIMIT 1;
+```

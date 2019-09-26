@@ -58,7 +58,7 @@ spec:
         volumeMounts:
         - name: varlibdockercontainers
           mountPath: /var/lib/docker/containers
-          # readOnly: true  # We leave a sqlite3 file on all servers.
+          # readOnly: true  # TODO: Keep state in postgres. We now leave a sqlite3 file on all servers.
       terminationGracePeriodSeconds: 10
       volumes:
       - name: varlibdockercontainers

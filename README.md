@@ -22,24 +22,36 @@ Log aggregation and storeage of docker container logs from kubernetes or single 
 - Query DB with normal SQL
 
 ```
-    SELECT timestamp, log
-    FROM logs
-    WHERE metadata ->> 'container_name' = 'some_container_name'
-    ORDER BY timestamp
-    DESC LIMIT 10;`
+SELECT timestamp, log
+FROM logs
+WHERE metadata ->> 'container_name' = 'some_container_name'
+ORDER BY timestamp
+DESC LIMIT 10;`
 ```
 
-# Reference commands
+# Example queries
 
 - Delete old chunks
 
 ```
-    SELECT drop_chunks(older_than => interval '1 month');
+SELECT drop_chunks(older_than => interval '1 month');
 ```
 
 - Indexed queries
 
 ```
-    CREATE INDEX ON logs ((metadata ->> 'container_id'), timestamp DESC);
-    SELECT timestamp FROM logs WHERE metadata ->> 'container_id' = 'some_container' ORDER BY timestamp DESC LIMIT 1;
+CREATE INDEX ON logs ((metadata ->> 'container_id'), timestamp DESC);
+SELECT timestamp FROM logs WHERE metadata ->> 'container_id' = 'some_container' ORDER BY timestamp DESC LIMIT 1;
+```
+
+- Free text search
+
+```
+SELECT raw_log FROM logs WHERE metadata ->> 'container_name' LIKE '%dispatcher%' AND raw_log LIKE '%ERROR:%';
+```
+
+- Histogram search
+
+```
+SELECT time_bucket('1 hour', timestamp) bucket, count(*) FROM logs GROUP BY bucket ORDER BY bucket DESC LIMIT 24;
 ```

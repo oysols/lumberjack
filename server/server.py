@@ -1,26 +1,23 @@
-from datetime import datetime
 import json
-import time
 import gzip
+from typing import List, Dict, Any, Tuple
 
-import psycopg2
-import psycopg2.extras
+import psycopg2  # type: ignore
+import psycopg2.extras  # type: ignore
+from psycopg2._psycopg import connection as Conn  # type: ignore
 import flask
-
-
-app = flask.Flask(__name__)
 
 
 POSTGRES_HOST = "timescale"
 
 
-def insert_bulk(conn, logs):
+app = flask.Flask(__name__)
+
+
+def insert_bulk(conn: Conn, logs: List[Dict[str, Any]]) -> None:
     with conn:
         with conn.cursor() as c:
-            start = time.time()
             values = ((log["timestamp"], log["raw_log"], log["stream"], json.dumps(log["log"]), json.dumps(log["metadata"])) for log in logs)
-            print("parse values", time.time() - start)
-            start = time.time()
             psycopg2.extras.execute_batch(
                 c,
                 """
@@ -30,35 +27,35 @@ def insert_bulk(conn, logs):
                 values,
                 page_size=1000
             )
-            print("perform query", time.time() - start)
 
 
 @app.route('/bulk', methods=['POST'])
-def bulk():
-    start = time.time()
+def bulk() -> Tuple[str, int]:
     conn = psycopg2.connect(host=POSTGRES_HOST, database="postgres", user="postgres", password="pass")
     data = gzip.decompress(flask.request.data)
     logs = json.loads(data)
-    print("prepare", time.time() - start)
-    try:
-        insert_bulk(conn, logs)
-    except:
-        print(logs)
-        raise
+    insert_bulk(conn, logs)
     return "Success", 200
 
 
-def select_all():
-    """
-    SELECT DISTINCT data -> 'docker' -> 'container_name' FROM logs;
-    SELECT data -> 'raw_log' FROM logs WHERE data -> 'docker' ->> 'container_name' LIKE '%cherry%' AND data->> 'raw_log' LIKE '%/job%';
-    SELECT time_bucket('1 hour', time) bucket, count(*) FROM logs GROUP BY bucket ORDER BY bucket;
-    """
-    with conn:
-        with conn.cursor() as c:
-            c.execute("SELECT * from logs")
-            for line in c.fetchall():
-                print(line)
+# TODO: Have dispatchers read latest timestamp from server
+# How to do the docker timestamp (-> postgres timestamptz -> python datetime ->) docker timestamp comparison?
+# @app.route('/latest_timestamp/<container_id>', methods=['GET'])
+# def latest_timestamp(container_id) -> None:
+#     conn = psycopg2.connect(host=POSTGRES_HOST, database="postgres", user="postgres", password="pass")
+#     with conn:
+#         with conn.cursor() as c:
+#             c.execute(
+#                 """
+#                     SELECT timestamp
+#                     FROM logs
+#                     WHERE metadata ->> 'container_id' = %s
+#                     ORDER BY timestamp DESC
+#                     LIMIT 1
+#                 """,
+#                 (container_id, )
+#             )
+#             c.fetchone()
 
 
 if __name__ == '__main__':

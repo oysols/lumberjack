@@ -85,22 +85,21 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: queue.
                 break
 
             # Parse
-            # Docker logs sometimes include a null byte character
-            # Postgres does not like this, so remove
+            # Docker logs sometimes include a null byte character. Postgres does not like this, so remove
             line = line.replace(b"\u0000", b"")
             try:
                 log_data = json.loads(line.decode())
                 raw_log = log_data["log"]
                 stream = log_data["stream"]
                 timestamp = log_data["time"]
-                parsed_log = None
             except Exception:
                 print("Error: Could not read log line {}:{} '{}'".format(log_path, line_no, line))
                 raise
             try:
                 parsed_log = json.loads(raw_log)
             except Exception:
-                pass
+                # log line could not be parsed as json
+                parsed_log = {}
             log_dict = {
                 "line_no": line_no,
                 "timestamp": timestamp,  # Convert to unix timestamp?
@@ -177,7 +176,6 @@ if __name__ == "__main__":
             last_scan_time = time.time()
 
         if not should_sleep or time.time() - last_send_time > post_interval:
-            start = time.time()
             with conn as cursor:
                 updated_line_nos = {}
                 logs: List[Dict[str, Any]] = []
@@ -194,20 +192,15 @@ if __name__ == "__main__":
                     # Keep track of submitted log lines
                     for container_id, line_no in updated_line_nos.items():
                         set_line_no_state(cursor, container_id, line_no)
-                    print(f"Parsed {len(logs)} logs in {time.time() - start}")
-                    start = time.time()
 
-                    # Send log lines to remote DB
+                    # Send log lines to server
                     headers = {'Content-Encoding': 'gzip'}
                     data = gzip.compress(json.dumps(logs).encode())
-                    print("Sending:", len(json.dumps(logs)), "bytes Compressed", len(data))
                     resp = requests.post("{}/bulk".format(LOGGER_SERVER_HOST), data=data, headers=headers)
-                    try:
-                        resp.raise_for_status()
-                    except Exception:
+                    if resp.status_code != 200:
+                        print(f"Error: Failed to post logs to server. Status code {resp.status_code}")
                         time.sleep(backoff_duration)
                         raise
-                    print("Sent in", time.time() - start)
 
                     # Reset timer
                     last_send_time = time.time()

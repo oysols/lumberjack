@@ -14,7 +14,7 @@ spec:
         app: timescale
     spec:
       nodeSelector:
-        lumberjack-test: "true"
+        lumberjack-db: "true"
       volumes:
         - name: timescale-volume
           hostPath:

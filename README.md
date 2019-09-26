@@ -21,6 +21,36 @@ Log aggregation and storeage of docker container logs from kubernetes or single 
 - Logs stored as JSONB
 - Query DB with normal SQL
 
+
+# Schema
+
+## logs
+
+- timestamp TIMESTAMPTZ (docker log timestamp)
+- raw_log TEXT (raw log line from docker log file)
+- stream TEXT (stdout, stderr)
+- log JSONB
+    - If the raw_log line is parsable as json it is inserted here as JSONB
+- metadata JSONB
+    - If using kubernetes service account
+        - container_id
+        - container_name
+        - container_image
+        - namespace
+        - pod_name
+        - pod_ip
+        - host_ip
+    - If using docker daemon
+        - container_id
+        - container_name
+        - container_image
+        - container_hostname
+        - host_hostname
+
+# Example queries
+
+- Show logs for container
+
 ```
 SELECT timestamp, log
 FROM logs
@@ -28,8 +58,6 @@ WHERE metadata ->> 'container_name' = 'some_container_name'
 ORDER BY timestamp
 DESC LIMIT 10;`
 ```
-
-# Example queries
 
 - Delete old chunks
 

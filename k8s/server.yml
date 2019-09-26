@@ -16,7 +16,7 @@ spec:
         app: lumberjack-server
     spec:
       nodeSelector:
-        lumberjack-test: "true"
+        lumberjack-db: "true"
       containers:
       - name: lumberjack-server
         image: lumberjack-server

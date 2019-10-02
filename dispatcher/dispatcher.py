@@ -71,7 +71,7 @@ def get_metadata_from_docker_inspect(inspect: Dict) -> Dict:
 
 def tail_container_to_queue(container_id: str, log_path: Path, log_queue: queue.Queue, start_line: int = 0) -> None:
     assert start_line > 0
-    p = subprocess.Popen(["tail", "-f", str(log_path), "-n", "+{}".format(start_line)], stdout=subprocess.PIPE)
+    p = subprocess.Popen(["tail", "--follow=name", str(log_path), "-n", "+{}".format(start_line)], stdout=subprocess.PIPE)
     try:
         if USE_KUBERNETES_SERVICEACCOUNT:
             container_metadata = get_k8s_container_meta_data(container_id)

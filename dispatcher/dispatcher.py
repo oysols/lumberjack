@@ -31,7 +31,8 @@ def get_pod_info_from_kubernetes() -> Dict:
     return pod_info
 
 
-def get_metadata_from_pod_info(pod_info: Dict, requested_container_id: str) -> Dict:
+def get_k8s_container_meta_data(requested_container_id: str) -> Dict:
+    pod_info = get_pod_info_from_kubernetes()
     for pod in pod_info["items"]:
         # pod_labels = pod["metadata"].get("labels", {})
         for container in pod["status"].get("containerStatuses", []):
@@ -58,6 +59,7 @@ def get_docker_inspect(container_id: str) -> Dict:
 
 
 def get_metadata_from_docker_inspect(inspect: Dict) -> Dict:
+    inspect = get_docker_inspect(container_id)
     return {
         "container_id": inspect["Id"],
         "container_name": inspect["Name"],
@@ -72,11 +74,9 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: queue.
     p = subprocess.Popen(["tail", "-f", str(log_path), "-n", "+{}".format(start_line)], stdout=subprocess.PIPE)
     try:
         if USE_KUBERNETES_SERVICEACCOUNT:
-            pod_info = get_pod_info_from_kubernetes()
-            container_metadata = get_metadata_from_pod_info(pod_info, container_id)
+            container_metadata = get_k8s_container_meta_data(container_id)
         else:
-            container_info = get_docker_inspect(container_id)
-            container_metadata = get_metadata_from_docker_inspect(container_info)
+            container_metadata = get_k8s_container_meta_data(container_id)
 
         line_no = start_line
         while True:

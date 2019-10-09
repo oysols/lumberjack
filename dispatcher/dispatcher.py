@@ -89,7 +89,7 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: queue.
             line = line.replace(b"\u0000", b"")
             try:
                 log_data = json.loads(line.decode())
-                raw_log = log_data["log"]
+                raw_log = log_data["log"].strip()  # Strip trailing newlines
                 stream = log_data["stream"]
                 timestamp = log_data["time"]
             except Exception:

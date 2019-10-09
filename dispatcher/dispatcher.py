@@ -58,7 +58,7 @@ def get_docker_inspect(container_id: str) -> Dict:
     return container_info
 
 
-def get_metadata_from_docker_inspect(inspect: Dict) -> Dict:
+def get_dockerd_container_meta_data(container_id: str) -> Dict:
     inspect = get_docker_inspect(container_id)
     return {
         "container_id": inspect["Id"],
@@ -76,7 +76,7 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: queue.
         if USE_KUBERNETES_SERVICEACCOUNT:
             container_metadata = get_k8s_container_meta_data(container_id)
         else:
-            container_metadata = get_k8s_container_meta_data(container_id)
+            container_metadata = get_dockerd_container_meta_data(container_id)
 
         line_no = start_line
         while True:

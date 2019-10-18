@@ -1,4 +1,4 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 import threading
 import queue
 import subprocess
@@ -14,8 +14,9 @@ import os
 import requests
 
 
-def get_pod_info_from_kubernetes() -> Dict:
+def get_pod_info_from_kubernetes() -> Dict[str, Any]:
     # Retrieve service account details
+    # Equivalent to "kubectl get pods -o json"
     service_account_path = Path("/var/run/secrets/kubernetes.io/serviceaccount")
     if not service_account_path.is_dir():
         raise Exception("Could not access k8s service account credentials")
@@ -27,16 +28,16 @@ def get_pod_info_from_kubernetes() -> Dict:
     endpoint = "/api/v1/pods"
     headers = {"Authorization": f"Bearer {bearer_token}"}
     res = requests.get(f"https://{service_host}:{service_port}{endpoint}", headers=headers, verify=ca_path)
-    pod_info: Dict = res.json()
+    pod_info: Dict[str, Any] = res.json()
     return pod_info
 
 
-def get_k8s_container_meta_data(requested_container_id: str) -> Dict:
+def get_k8s_container_meta_data(requested_container_id: str) -> Dict[str, str]:
     pod_info = get_pod_info_from_kubernetes()
     for pod in pod_info["items"]:
         # pod_labels = pod["metadata"].get("labels", {})
         for container in pod["status"].get("containerStatuses", []):
-            container_id = container["containerID"].split("//")[-1]
+            container_id = container.get("containerID", "").split("//")[-1]
             if container_id == requested_container_id:
                 return {
                     "container_id": container_id,
@@ -50,15 +51,15 @@ def get_k8s_container_meta_data(requested_container_id: str) -> Dict:
     raise Exception("Container not found in pod info")
 
 
-def get_docker_inspect(container_id: str) -> Dict:
+def get_docker_inspect(container_id: str) -> Dict[str, Any]:
     out = subprocess.check_output(["docker", "inspect", container_id]).decode()
-    data = json.loads(out)
+    data: List[Dict[str, Any]] = json.loads(out)
     assert len(data) == 1
-    container_info: Dict = data[0]
+    container_info = data[0]
     return container_info
 
 
-def get_dockerd_container_meta_data(container_id: str) -> Dict:
+def get_dockerd_container_meta_data(container_id: str) -> Dict[str, str]:
     inspect = get_docker_inspect(container_id)
     return {
         "container_id": inspect["Id"],
@@ -69,15 +70,16 @@ def get_dockerd_container_meta_data(container_id: str) -> Dict:
     }
 
 
-def tail_container_to_queue(container_id: str, log_path: Path, log_queue: queue.Queue, start_line: int = 0) -> None:
+def tail_container_to_queue(container_id: str, log_path: Path, log_queue: "queue.Queue[Dict[str, Any]]", start_line: int = 0) -> None:
     assert start_line > 0
+    if USE_KUBERNETES_SERVICEACCOUNT:
+        container_metadata = get_k8s_container_meta_data(container_id)
+    else:
+        container_metadata = get_dockerd_container_meta_data(container_id)
+
+    print("INFO: Tailing container", container_metadata)
     p = subprocess.Popen(["tail", "--follow=name", str(log_path), "-n", "+{}".format(start_line)], stdout=subprocess.PIPE)
     try:
-        if USE_KUBERNETES_SERVICEACCOUNT:
-            container_metadata = get_k8s_container_meta_data(container_id)
-        else:
-            container_metadata = get_dockerd_container_meta_data(container_id)
-
         line_no = start_line
         while True:
             line = p.stdout.readline()
@@ -112,6 +114,7 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: queue.
             log_queue.put(log_dict)
             line_no += 1
     finally:
+        print("INFO: No longer tailing container", container_metadata)
         p.kill()
         p.wait()
 
@@ -125,17 +128,25 @@ def get_next_line_no(conn: sqlite3.Connection, container_id: str) -> int:
             return int(result[0]) + 1
 
 
-def scan_and_tail_logs_in_threads(conn: sqlite3.Connection, log_tail_threads: Dict[str, threading.Thread], log_queue: queue.Queue) -> None:
+def scan_and_tail_logs_in_threads(conn: sqlite3.Connection, log_tail_threads: Dict[str, Tuple[float, threading.Thread]], log_queue: 'queue.Queue[Dict[str, Any]]') -> None:
     for container in LOG_DIR.iterdir():
         container_id = container.name
-        if log_tail_threads.get(container_id):
-            continue
         log = container / "{}-json.log".format(container_id)
         if log.is_file():
+            # Check existing threads
+            existing_thread = log_tail_threads.get(container_id)
+            if existing_thread:
+                start_time, thread = existing_thread
+                if thread.is_alive():
+                    # Do not start new thread if current thread is alive
+                    continue
+                elif (time.time() - start_time) < RETRY_TAIL_DELAY:
+                    # Start new thread if current thread is dead and DELAY has been exceeded
+                    continue
             line_no = get_next_line_no(conn, container_id)
             thread = threading.Thread(target=tail_container_to_queue, args=(container_id, log.absolute(), log_queue, line_no), daemon=True)
             thread.start()
-            log_tail_threads[container_id] = thread
+            log_tail_threads[container_id] = (time.time(), thread)
 
 
 def set_line_no_state(cursor: sqlite3.Cursor, container_id: str, line_no: int) -> None:
@@ -158,28 +169,30 @@ if __name__ == "__main__":
     conn = sqlite3.connect(str(LOCAL_STATE_DB_PATH))
     conn.execute("CREATE TABLE IF NOT EXISTS containers (id VARCHAR UNIQUE, line_no VARCHAR)")
 
-    log_queue = queue.Queue(maxsize=2000)  # type: queue.Queue[Dict[str, Any]]
-    max_logs_per_post = 1000
-    post_interval = 5
-    scan_interval = 10
-    sleep_duration = 0.5
-    backoff_duration = 5
+    MAX_LOGS_PER_POST = 1000
+    POST_INTERVAL = 5
+    SCAN_INTERVAL = 10
+    IDLE_SLEEP_DURATION = 0.5
+    BACKOFF_DURATION = 5
+    RETRY_TAIL_DELAY = 60
 
-    log_tail_threads: Dict[str, threading.Thread] = {}
+    log_queue = queue.Queue(maxsize=1000)  # type: queue.Queue[Dict[str, Any]]
+
+    log_tail_threads: Dict[str, Tuple[float, threading.Thread]] = {}
     last_scan_time = time.time()
     last_send_time = time.time()
     should_sleep = False
 
     while True:
-        if time.time() - last_scan_time > scan_interval:
+        if time.time() - last_scan_time > SCAN_INTERVAL:
             scan_and_tail_logs_in_threads(conn, log_tail_threads, log_queue)
             last_scan_time = time.time()
 
-        if not should_sleep or time.time() - last_send_time > post_interval:
+        if not should_sleep or time.time() - last_send_time > POST_INTERVAL:
             with conn as cursor:
                 updated_line_nos = {}
                 logs: List[Dict[str, Any]] = []
-                while len(logs) < max_logs_per_post:
+                while len(logs) < MAX_LOGS_PER_POST:
                     # Fetch new logs from queue
                     try:
                         log_dict = log_queue.get_nowait()
@@ -199,17 +212,17 @@ if __name__ == "__main__":
                     resp = requests.post("{}/bulk".format(LOGGER_SERVER_HOST), data=data, headers=headers)
                     if resp.status_code != 200:
                         print(f"Error: Failed to post logs to server. Status code {resp.status_code}")
-                        time.sleep(backoff_duration)
-                        raise
+                        time.sleep(BACKOFF_DURATION)
+                        raise  # Process crash and reboot
 
                     # Reset timer
                     last_send_time = time.time()
 
-                if len(logs) == max_logs_per_post:
+                if len(logs) == MAX_LOGS_PER_POST:
                     should_sleep = False
                 else:
                     should_sleep = True
 
         # Sleep if nothing was done
         if should_sleep:
-            time.sleep(sleep_duration)
+            time.sleep(IDLE_SLEEP_DURATION)

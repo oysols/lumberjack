@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 import threading
 import queue
 import subprocess
@@ -32,7 +32,7 @@ def get_pod_info_from_kubernetes() -> Dict[str, Any]:
     return pod_info
 
 
-def get_k8s_container_meta_data(requested_container_id: str) -> Dict[str, str]:
+def get_k8s_container_meta_data(requested_container_id: str) -> Optional[Dict[str, str]]:
     pod_info = get_pod_info_from_kubernetes()
     for pod in pod_info["items"]:
         # pod_labels = pod["metadata"].get("labels", {})
@@ -48,7 +48,7 @@ def get_k8s_container_meta_data(requested_container_id: str) -> Dict[str, str]:
                     "pod_ip": pod["status"]["podIP"],
                     "host_ip": pod["status"]["hostIP"],
                 }
-    raise Exception("Container not found in pod info")
+    return None
 
 
 def get_docker_inspect(container_id: str) -> Dict[str, Any]:
@@ -59,8 +59,11 @@ def get_docker_inspect(container_id: str) -> Dict[str, Any]:
     return container_info
 
 
-def get_dockerd_container_meta_data(container_id: str) -> Dict[str, str]:
-    inspect = get_docker_inspect(container_id)
+def get_dockerd_container_meta_data(container_id: str) -> Optional[Dict[str, str]]:
+    try:
+        inspect = get_docker_inspect(container_id)
+    except Exception:
+        return None
     return {
         "container_id": inspect["Id"],
         "container_name": inspect["Name"],
@@ -76,6 +79,9 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: "queue
         container_metadata = get_k8s_container_meta_data(container_id)
     else:
         container_metadata = get_dockerd_container_meta_data(container_id)
+    if not container_metadata:
+        print(f"ERROR: Container meta data not found for {container_id}")
+        return
 
     print("INFO: Tailing container", container_metadata)
     p = subprocess.Popen(["tail", "--follow=name", str(log_path), "-n", "+{}".format(start_line)], stdout=subprocess.PIPE)

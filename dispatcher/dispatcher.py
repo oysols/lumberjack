@@ -134,25 +134,31 @@ def get_next_line_no(conn: sqlite3.Connection, container_id: str) -> int:
             return int(result[0]) + 1
 
 
-def scan_and_tail_logs_in_threads(conn: sqlite3.Connection, log_tail_threads: Dict[str, Tuple[float, threading.Thread]], log_queue: 'queue.Queue[Dict[str, Any]]') -> None:
+def scan_and_tail_logs_in_threads(conn: sqlite3.Connection, log_tail_threads: Dict[str, Tuple[float, int, threading.Thread]], log_queue: 'queue.Queue[Dict[str, Any]]') -> None:
     for container in LOG_DIR.iterdir():
         container_id = container.name
         log = container / "{}-json.log".format(container_id)
         if log.is_file():
-            # Check existing threads
             existing_thread = log_tail_threads.get(container_id)
             if existing_thread:
-                start_time, thread = existing_thread
+                # Thread has previously been started for this container
+                start_time, backoff_level, thread = existing_thread
                 if thread.is_alive():
                     # Do not start new thread if current thread is alive
                     continue
-                elif (time.time() - start_time) < RETRY_TAIL_DELAY:
-                    # Start new thread if current thread is dead and DELAY has been exceeded
+                elif (time.time() - start_time) < RETRY_TAIL_DELAY_EXPONENTIAL_BASE ** backoff_level:
+                    # Do not start new thread if retry delay has not been exceeded
                     continue
+                else:
+                    # Start new thread with increased backoff_level
+                    print(f"INFO: Restarting thread for {container_id} after waiting {RETRY_TAIL_DELAY_EXPONENTIAL_BASE ** backoff_level} s")
+                    backoff_level += 1
+            else:
+                backoff_level = 1
             line_no = get_next_line_no(conn, container_id)
             thread = threading.Thread(target=tail_container_to_queue, args=(container_id, log.absolute(), log_queue, line_no), daemon=True)
             thread.start()
-            log_tail_threads[container_id] = (time.time(), thread)
+            log_tail_threads[container_id] = (time.time(), backoff_level, thread)
 
 
 def set_line_no_state(cursor: sqlite3.Cursor, container_id: str, line_no: int) -> None:
@@ -180,11 +186,11 @@ if __name__ == "__main__":
     SCAN_INTERVAL = 10
     IDLE_SLEEP_DURATION = 0.5
     BACKOFF_DURATION = 5
-    RETRY_TAIL_DELAY = 60
+    RETRY_TAIL_DELAY_EXPONENTIAL_BASE = 5  # Will increase during backoff VALUE**1, VALUE**2, VALUE**3...
 
     log_queue = queue.Queue(maxsize=1000)  # type: queue.Queue[Dict[str, Any]]
 
-    log_tail_threads: Dict[str, Tuple[float, threading.Thread]] = {}
+    log_tail_threads: Dict[str, Tuple[float, int, threading.Thread]] = {}
     last_scan_time = time.time()
     last_send_time = time.time()
     should_sleep = False

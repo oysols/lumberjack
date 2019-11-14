@@ -1,11 +1,14 @@
 import json
 import gzip
 from typing import List, Dict, Any, Tuple
+import logging
 
 import psycopg2  # type: ignore
 import psycopg2.extras  # type: ignore
 from psycopg2._psycopg import connection as Conn  # type: ignore
 import flask
+
+import jsonlogger
 
 
 POSTGRES_HOST = "timescale"
@@ -59,4 +62,7 @@ def bulk() -> Tuple[str, int]:
 
 
 if __name__ == '__main__':
+    jsonlogger.setup_json_logger(logging.WARNING)
+    werkzeug_logger = logging.getLogger("werkzeug")
+    werkzeug_logger.setLevel(logging.WARNING)
     app.run(host="0.0.0.0", port="5000", threaded=True)

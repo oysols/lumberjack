@@ -10,9 +10,11 @@ import time
 import gzip
 import argparse
 import os
+import logging
 
 import requests
 
+import jsonlogger
 
 def get_pod_info_from_kubernetes() -> Dict[str, Any]:
     # Retrieve service account details
@@ -52,7 +54,7 @@ def get_k8s_container_meta_data(requested_container_id: str) -> Optional[Dict[st
 
 
 def get_docker_inspect(container_id: str) -> Dict[str, Any]:
-    out = subprocess.check_output(["docker", "inspect", container_id]).decode()
+    out = subprocess.check_output(["docker", "inspect", container_id], stderr=subprocess.DEVNULL).decode()
     data: List[Dict[str, Any]] = json.loads(out)
     assert len(data) == 1
     container_info = data[0]
@@ -80,10 +82,10 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: "queue
     else:
         container_metadata = get_dockerd_container_meta_data(container_id)
     if not container_metadata:
-        print(f"ERROR: Container meta data not found for {container_id}")
+        logging.error("Container meta data not found", {"container_id": container_id})
         return
 
-    print("INFO: Tailing container", container_metadata)
+    logging.info("Tailing container", {"container_metadata": container_metadata})
     p = subprocess.Popen(["tail", "--follow=name", str(log_path), "-n", "+{}".format(start_line)], stdout=subprocess.PIPE)
     try:
         line_no = start_line
@@ -101,8 +103,8 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: "queue
                 stream = log_data["stream"]
                 timestamp = log_data["time"]
             except Exception:
-                print("Error: Could not read log line {}:{} '{}'".format(log_path, line_no, line))
-                raise
+                logging.error("Could not read log line", {"container_id": {container_id}, "line_no": line_no, "line": line})
+                return
             try:
                 parsed_log = json.loads(raw_log)
             except Exception:
@@ -120,7 +122,7 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: "queue
             log_queue.put(log_dict)
             line_no += 1
     finally:
-        print("INFO: No longer tailing container", container_metadata)
+        logging.info("No longer tailing container", {"container_id": container_id})
         p.kill()
         p.wait()
 
@@ -151,7 +153,7 @@ def scan_and_tail_logs_in_threads(conn: sqlite3.Connection, log_tail_threads: Di
                     continue
                 else:
                     # Start new thread with increased backoff_level
-                    print(f"INFO: Restarting thread for {container_id} after waiting {RETRY_TAIL_DELAY_EXPONENTIAL_BASE ** backoff_level} s")
+                    logging.info("Restarting tail thread" ,{"container_id": container_id, "latest_backoff_seconds": RETRY_TAIL_DELAY_EXPONENTIAL_BASE ** backoff_level})
                     backoff_level += 1
             else:
                 backoff_level = 1
@@ -166,6 +168,7 @@ def set_line_no_state(cursor: sqlite3.Cursor, container_id: str, line_no: int) -
 
 
 if __name__ == "__main__":
+    jsonlogger.setup_json_logger(logging.INFO)
     parser = argparse.ArgumentParser(description='Collect docker logs and send them to logging server')
     parser.add_argument('--kubernetes', help='Use kubernetes service account to collect metadata', action="store_true")
     args = parser.parse_args()
@@ -223,9 +226,9 @@ if __name__ == "__main__":
                     data = gzip.compress(json.dumps(logs).encode())
                     resp = requests.post("{}/bulk".format(LOGGER_SERVER_HOST), data=data, headers=headers)
                     if resp.status_code != 200:
-                        print(f"Error: Failed to post logs to server. Status code {resp.status_code}")
+                        logging.error("Failed to post logs to server", {"status_code": resp.status_code})
                         time.sleep(BACKOFF_DURATION)
-                        raise  # Process crash and reboot
+                        raise Exception  # Process crash and reboot
 
                     # Reset timer
                     last_send_time = time.time()

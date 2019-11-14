@@ -47,7 +47,7 @@ spec:
     spec:
       containers:
       - name: lumberjack-dispatcher
-        image: lumberjack-dispatcher
+        image: lumberjack
         imagePullPolicy: IfNotPresent
         command:
           - python3

@@ -11,13 +11,15 @@ services:
             - 5432:5432
 
     lumberjack-server:
-        build: server
-        image: lumberjack-server
+        build: lumberjack
+        image: lumberjack
+        command: "python3 -u server.py"
         restart: always
 
     lumberjack-dispatcher:
-        build: dispatcher
-        image: lumberjack-dispatcher
+        build: lumberjack
+        image: lumberjack
+        command: "python3 -u dispatcher.py"
         volumes:
             - /var/run/docker.sock:/var/run/docker.sock
             - /var/lib/docker/containers:/var/lib/docker/containers

@@ -83,3 +83,9 @@ SELECT raw_log FROM logs WHERE metadata ->> 'container_name' LIKE '%dispatcher%'
 ```
 SELECT time_bucket('1 hour', timestamp) bucket, count(*) FROM logs GROUP BY bucket ORDER BY bucket DESC LIMIT 24;
 ```
+
+# License
+
+Copyright (C) 2019 Øystein Olsen
+
+Licensed under GPL-3.0-only

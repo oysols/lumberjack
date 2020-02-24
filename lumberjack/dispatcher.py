@@ -11,6 +11,7 @@ import gzip
 import argparse
 import os
 import logging
+import random
 
 import requests
 
@@ -136,7 +137,12 @@ def get_next_line_no(conn: sqlite3.Connection, container_id: str) -> int:
             return int(result[0]) + 1
 
 
-def scan_and_tail_logs_in_threads(conn: sqlite3.Connection, log_tail_threads: Dict[str, Tuple[float, int, threading.Thread]], log_queue: 'queue.Queue[Dict[str, Any]]') -> None:
+def add_randomness(number: float) -> float:
+    # Add 20% randomness to spread api load
+    return number + number * 0.2 * random.random()
+
+
+def scan_and_tail_logs_in_threads(conn: sqlite3.Connection, log_tail_threads: Dict[str, Tuple[float, float, threading.Thread]], log_queue: 'queue.Queue[Dict[str, Any]]') -> None:
     for container in LOG_DIR.iterdir():
         container_id = container.name
         log = container / "{}-json.log".format(container_id)
@@ -144,23 +150,24 @@ def scan_and_tail_logs_in_threads(conn: sqlite3.Connection, log_tail_threads: Di
             existing_thread = log_tail_threads.get(container_id)
             if existing_thread:
                 # Thread has previously been started for this container
-                start_time, backoff_level, thread = existing_thread
+                start_time, backoff, thread = existing_thread
                 if thread.is_alive():
                     # Do not start new thread if current thread is alive
                     continue
-                elif (time.time() - start_time) < RETRY_TAIL_DELAY_EXPONENTIAL_BASE ** backoff_level:
-                    # Do not start new thread if retry delay has not been exceeded
+                elif (time.time() - start_time) < backoff:
+                    # Do not start new thread if backoff delay has not been exceeded
                     continue
                 else:
                     # Start new thread with increased backoff_level
-                    logging.info("Restarting tail thread" ,{"container_id": container_id, "latest_backoff_seconds": RETRY_TAIL_DELAY_EXPONENTIAL_BASE ** backoff_level})
-                    backoff_level += 1
+                    backoff = add_randomness(backoff * RETRY_TAIL_DELAY_EXPONENTIAL_BASE)
+                    logging.info("Restarting tail thread" ,{"container_id": container_id, "backoff": int(backoff)})
             else:
-                backoff_level = 1
+                start_time = time.time()
+                backoff = add_randomness(RETRY_TAIL_DELAY_EXPONENTIAL_BASE)
             line_no = get_next_line_no(conn, container_id)
             thread = threading.Thread(target=tail_container_to_queue, args=(container_id, log.absolute(), log_queue, line_no), daemon=True)
             thread.start()
-            log_tail_threads[container_id] = (time.time(), backoff_level, thread)
+            log_tail_threads[container_id] = (start_time, backoff, thread)
 
 
 def set_line_no_state(cursor: sqlite3.Cursor, container_id: str, line_no: int) -> None:
@@ -185,15 +192,15 @@ if __name__ == "__main__":
     conn.execute("CREATE TABLE IF NOT EXISTS containers (id VARCHAR UNIQUE, line_no VARCHAR)")
 
     MAX_LOGS_PER_POST = 1000
-    POST_INTERVAL = 5
-    SCAN_INTERVAL = 10
-    IDLE_SLEEP_DURATION = 0.5
-    BACKOFF_DURATION = 5
+    POST_INTERVAL = add_randomness(5)
+    SCAN_INTERVAL = add_randomness(10)
+    IDLE_SLEEP_DURATION = add_randomness(0.5)
+    POST_LOGS_BACKOFF_DURATION = 5
     RETRY_TAIL_DELAY_EXPONENTIAL_BASE = 5  # Will increase during backoff VALUE**1, VALUE**2, VALUE**3...
 
     log_queue = queue.Queue(maxsize=1000)  # type: queue.Queue[Dict[str, Any]]
 
-    log_tail_threads: Dict[str, Tuple[float, int, threading.Thread]] = {}
+    log_tail_threads: Dict[str, Tuple[float, float, threading.Thread]] = {}
     last_scan_time = time.time()
     last_send_time = time.time()
     should_sleep = False
@@ -227,7 +234,7 @@ if __name__ == "__main__":
                     resp = requests.post("{}/bulk".format(LOGGER_SERVER_HOST), data=data, headers=headers)
                     if resp.status_code != 200:
                         logging.error("Failed to post logs to server", {"status_code": resp.status_code})
-                        time.sleep(BACKOFF_DURATION)
+                        time.sleep(POST_LOGS_BACKOFF_DURATION)
                         raise Exception  # Process crash and reboot
 
                     # Reset timer

@@ -82,7 +82,7 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: "queue
     else:
         container_metadata = get_dockerd_container_meta_data(container_id)
     if not container_metadata:
-        logging.error("Container meta data not found", {"container_id": container_id})
+        logging.info("Container meta data not found", {"container_id": container_id})
         return
 
     logging.info("Tailing container", {"container_metadata": container_metadata})

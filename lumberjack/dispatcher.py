@@ -87,7 +87,7 @@ def tail_container_to_queue(container_id: str, log_path: Path, log_queue: "queue
         return
 
     logging.info("Tailing container", {"container_metadata": container_metadata})
-    p = subprocess.Popen(["tail", "--follow=name", str(log_path), "-n", "+{}".format(start_line)], stdout=subprocess.PIPE)
+    p = subprocess.Popen(["tail", "--follow=name", str(log_path), "-n", "+{}".format(start_line)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     try:
         line_no = start_line
         while True:

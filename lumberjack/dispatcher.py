@@ -40,10 +40,17 @@ def get_k8s_container_meta_data(requested_container_id: str) -> Optional[Dict[st
     for pod in pod_info["items"]:
         # pod_labels = pod["metadata"].get("labels", {})
         for container in pod["status"].get("containerStatuses", []):
-            container_id = container.get("containerID", "").split("//")[-1]
-            if container_id == requested_container_id:
+            is_match = False
+            # Currently running container
+            if container.get("containerID", "").split("//")[-1] == requested_container_id:
+                is_match = True
+            # Previously running container
+            for state in container.get("lastState", {}).values():
+                if state.get("containerID", "").split("//")[-1] == requested_container_id:
+                    is_match = True
+            if is_match:
                 return {
-                    "container_id": container_id,
+                    "container_id": requested_container_id,
                     "container_name": container["name"],
                     "container_image": container["image"],
                     "namespace": pod["metadata"]["namespace"],
